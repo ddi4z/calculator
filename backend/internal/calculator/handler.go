@@ -36,6 +36,7 @@ const (
 )
 
 var errRequestBodyType = errors.New("request body must be a JSON object")
+var errJSONNumberType = errors.New(messageInvalidJSONNumber)
 
 type APIError struct {
 	Code    string `json:"code"`
@@ -207,6 +208,10 @@ func handleCalculate(w http.ResponseWriter, r *http.Request, calculator Calculat
 		}
 		value, err := parseFiniteNumber(raw)
 		if err != nil {
+			if errors.Is(err, errJSONNumberType) {
+				writeError(w, http.StatusBadRequest, codeInvalidType, messageOperandType)
+				return
+			}
 			writeError(w, http.StatusUnprocessableEntity, CodeInvalidNumber, messageNonFiniteNumber)
 			return
 		}
@@ -235,7 +240,7 @@ func handleCalculate(w http.ResponseWriter, r *http.Request, calculator Calculat
 func parseFiniteNumber(raw json.RawMessage) (float64, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || (trimmed[0] != '-' && (trimmed[0] < '0' || trimmed[0] > '9')) {
-		return 0, errors.New(messageInvalidJSONNumber)
+		return 0, errJSONNumberType
 	}
 	value, err := strconv.ParseFloat(string(trimmed), 64)
 	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {

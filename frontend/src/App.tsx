@@ -18,6 +18,10 @@ type ApiError = {
 }
 
 type ApiPayload = { result?: number } & ApiError
+type ValidationError = {
+  field: 'first-number' | 'second-number'
+  message: string
+}
 
 const operations: { value: Operation; label: string; symbol: string }[] = [
   { value: 'add', label: 'Addition', symbol: '+' },
@@ -69,17 +73,25 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
 
   const isBinary = binaryOperations.has(operation)
-  const validationError = useMemo(() => {
-    if (first.trim() === '') return 'Enter a value for the first number.'
-    if (!Number.isFinite(Number(first))) return 'The first number must be valid.'
+  const validationError = useMemo<ValidationError | null>(() => {
+    if (first.trim() === '') {
+      return { field: 'first-number', message: 'Enter a value for the first number.' }
+    }
+    if (!Number.isFinite(Number(first))) {
+      return { field: 'first-number', message: 'The first number must be valid.' }
+    }
     if (operation === 'sqrt' && Number(first) < 0) {
-      return 'Square root requires a non-negative number.'
+      return { field: 'first-number', message: 'Square root requires a non-negative number.' }
     }
     if (isBinary) {
-      if (second.trim() === '') return 'Enter a value for the second number.'
-      if (!Number.isFinite(Number(second))) return 'The second number must be valid.'
+      if (second.trim() === '') {
+        return { field: 'second-number', message: 'Enter a value for the second number.' }
+      }
+      if (!Number.isFinite(Number(second))) {
+        return { field: 'second-number', message: 'The second number must be valid.' }
+      }
       if (operation === 'divide' && Number(second) === 0) {
-        return 'The divisor cannot be zero.'
+        return { field: 'second-number', message: 'The divisor cannot be zero.' }
       }
     }
     return null
@@ -95,7 +107,7 @@ function App() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (validationError) {
-      setError(validationError)
+      setError(validationError.message)
       setResult(null)
       return
     }
@@ -144,6 +156,7 @@ function App() {
           <select
             id="operation"
             value={operation}
+            disabled={isLoading}
             onChange={(event) => handleOperationChange(event.target.value as Operation)}
           >
             {operations.map((item) => (
@@ -163,12 +176,14 @@ function App() {
                 type="number"
                 inputMode="decimal"
                 value={first}
+                disabled={isLoading}
                 onChange={(event) => {
                   setFirst(event.target.value)
                   setError(null)
                   setResult(null)
                 }}
-                aria-invalid={Boolean(error && validationError)}
+                aria-invalid={validationError?.field === 'first-number'}
+                aria-describedby={validationError?.field === 'first-number' ? 'validation-error' : undefined}
                 placeholder="e.g. 12"
               />
             </div>
@@ -182,19 +197,25 @@ function App() {
                   type="number"
                   inputMode="decimal"
                   value={second}
+                  disabled={isLoading}
                   onChange={(event) => {
                     setSecond(event.target.value)
                     setError(null)
                     setResult(null)
                   }}
-                  aria-invalid={Boolean(error && validationError)}
+                  aria-invalid={validationError?.field === 'second-number'}
+                  aria-describedby={validationError?.field === 'second-number' ? 'validation-error' : undefined}
                   placeholder="e.g. 3"
                 />
               </div>
             )}
           </div>
 
-          {validationError && <p className="inline-error">{validationError}</p>}
+          {validationError && (
+            <p id="validation-error" className="inline-error">
+              {validationError.message}
+            </p>
+          )}
 
           <button type="submit" disabled={Boolean(validationError) || isLoading}>
             {isLoading ? 'Calculating…' : 'Calculate'}

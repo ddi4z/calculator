@@ -384,21 +384,24 @@ func TestHTTPCalculate_InvalidJSONAndMissingFields(t *testing.T) {
 	})
 
 	for _, tc := range []struct {
-		name    string
-		payload string
+		name       string
+		payload    string
+		wantStatus int
+		wantCode   string
 	}{
-		{name: "string operand", payload: `{"operation":"add","operands":[12,"3"]}`},
-		{name: "boolean operand", payload: `{"operation":"add","operands":[12,true]}`},
-		{name: "object operand", payload: `{"operation":"add","operands":[12,{}]}`},
-		{name: "non-finite operand", payload: `{"operation":"add","operands":[12,1e999]}`},
+		{name: "string operand", payload: `{"operation":"add","operands":[12,"3"]}`, wantStatus: http.StatusBadRequest, wantCode: codeInvalidType},
+		{name: "boolean operand", payload: `{"operation":"add","operands":[12,true]}`, wantStatus: http.StatusBadRequest, wantCode: codeInvalidType},
+		{name: "object operand", payload: `{"operation":"add","operands":[12,{}]}`, wantStatus: http.StatusBadRequest, wantCode: codeInvalidType},
+		{name: "array operand", payload: `{"operation":"add","operands":[12,[]]}`, wantStatus: http.StatusBadRequest, wantCode: codeInvalidType},
+		{name: "non-finite operand", payload: `{"operation":"add","operands":[12,1e999]}`, wantStatus: http.StatusUnprocessableEntity, wantCode: CodeInvalidNumber},
 	} {
 		t.Run("invalid "+tc.name, func(t *testing.T) {
 			status, rawBody, response, err := doRawJSONRequest(t, h, http.MethodPost, "/api/calculate", tc.payload)
 			if err != nil {
 				t.Fatalf("request failed: %v", err)
 			}
-			if status != http.StatusUnprocessableEntity || response.Error == nil || response.Error.Code != CodeInvalidNumber {
-				t.Fatalf("status=%d error=%#v, want 422/%s; body=%s", status, response.Error, CodeInvalidNumber, rawBody)
+			if status != tc.wantStatus || response.Error == nil || response.Error.Code != tc.wantCode {
+				t.Fatalf("status=%d error=%#v, want %d/%s; body=%s", status, response.Error, tc.wantStatus, tc.wantCode, rawBody)
 			}
 		})
 	}

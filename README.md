@@ -321,7 +321,7 @@ and iterative refinements, instead of broad rewrites. Once the behavior was
 stable, the final documentation and the other project deliverables were written
 and aligned with the validated implementation.
 
-## Validation and test coverage
+## Validation
 
 Run the backend tests and static checks:
 
@@ -340,37 +340,8 @@ npm run build
 npm run lint
 ```
 
-Generate the backend coverage profile and summary:
-
-```powershell
-Set-Location backend
-go test ./... -coverprofile .\coverage.out
-go tool cover -func .\coverage.out
-go tool cover -html .\coverage.out -o .\coverage.html
-```
-
-Generate the frontend coverage summary and HTML report:
-
-```powershell
-Set-Location frontend
-npm run test:coverage
-```
-
-The backend HTML report is written to `backend/coverage.html`. The frontend
-HTML report is written to `frontend/coverage/index.html`. Generated reports
-are ignored by Git.
-
-Latest local results:
-
-| Suite | Statements | Lines | Branches |
-| --- | ---: | ---: | ---: |
-| Backend total (includes `cmd/server`) | 85.6% | not reported by `go tool cover` | not reported by `go tool cover` |
-| Backend core package (`internal/calculator`) | 89.1% | not reported by `go tool cover` | not reported by `go tool cover` |
-| Frontend | 91.3% | 93.65% | 87.5% |
-
-> The backend overall coverage is 85.6% because it includes the small `cmd/server`
-> package, which has no direct test coverage. The calculation logic itself in
-> `internal/calculator` is covered at 89.1%.
+Coverage figures and commands to regenerate the reports are documented in
+[COVERAGE.md](COVERAGE.md).
 
 ## Repository
 
