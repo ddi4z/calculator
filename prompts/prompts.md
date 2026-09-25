@@ -97,3 +97,30 @@ Define `power(a, b)` using Go's `math.Pow` semantics. update the operation table
 ### Prompt 2.18
 /review assignment.md spec.md Compare the assignment statement (assignment.md) with the solution plan (spec.md). 
 Identify inconsistencies, missing coverage, or ambiguities between the two documents [image](files/2.18.png)
+
+## Prompt 3: Implement Assignment
+Implement the project according to spec.md.
+
+Use a separate Git worktree for each agent and do not let agents modify the same worktree concurrently.
+
+Run these workstreams:
+
+1. Backend tests
+- Read only spec.md.
+- Create Go tests covering all operations and edge cases.
+- Do not read or modify backend implementation or spec.md.
+
+2. Backend implementation
+- Implement the Go REST API according to spec.md.
+- Do not read or modify the tests created by the test agent.
+- Run formatting, static checks, and backend tests available in its worktree.
+
+3. Frontend
+- Implement the React + TypeScript UI according to spec.md.
+- Consume the backend API without duplicating business logic.
+- Include the required frontend tests.
+- Run frontend tests and the production build.
+
+Afterward, create an integration worktree, combine all changes, resolve only integration issues, and run the complete backend and frontend validation suite.
+
+Do not change spec.md or add features outside its scope. Report worktrees, changed files, commands, and validation results [image](files/3.png)
