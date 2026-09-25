@@ -88,4 +88,34 @@ describe('calculator', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Cannot divide by zero.')
   })
+
+  it('handles an empty backend response without a JSON parsing exception', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValue(new Response('', { status: 502 }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.type(screen.getByLabelText(/first number/i), '8')
+    await user.type(screen.getByLabelText(/second number/i), '2')
+    await user.click(screen.getByRole('button', { name: /calculate/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The calculation could not be completed.',
+    )
+  })
+
+  it('reports invalid non-empty backend responses as invalid JSON', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValue(new Response('not-json', { status: 502 }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.type(screen.getByLabelText(/first number/i), '8')
+    await user.type(screen.getByLabelText(/second number/i), '2')
+    await user.click(screen.getByRole('button', { name: /calculate/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The calculator service returned invalid JSON.',
+    )
+  })
 })

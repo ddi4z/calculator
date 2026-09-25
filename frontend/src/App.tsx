@@ -17,6 +17,8 @@ type ApiError = {
   }
 }
 
+type ApiPayload = { result?: number } & ApiError
+
 const operations: { value: Operation; label: string; symbol: string }[] = [
   { value: 'add', label: 'Addition', symbol: '+' },
   { value: 'subtract', label: 'Subtraction', symbol: '−' },
@@ -40,6 +42,17 @@ function formatResult(result: number) {
   return Number.isInteger(result)
     ? result.toString()
     : result.toLocaleString('en-US', { maximumFractionDigits: 10 })
+}
+
+async function readApiPayload(response: Response): Promise<ApiPayload> {
+  const body = await response.text()
+  if (body.trim() === '') return {}
+
+  try {
+    return JSON.parse(body) as ApiPayload
+  } catch {
+    throw new Error('The calculator service returned invalid JSON.')
+  }
 }
 
 function App() {
@@ -93,7 +106,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ operation, operands }),
       })
-      const payload = (await response.json()) as { result?: number } & ApiError
+      const payload = await readApiPayload(response)
       if (!response.ok) {
         throw new Error(payload.error?.message || 'The calculation could not be completed.')
       }

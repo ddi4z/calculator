@@ -194,7 +194,18 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, value interface{}) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		status = http.StatusInternalServerError
+		body, _ = json.Marshal(errorResponse{
+			Error: APIError{
+				Code:    "INTERNAL_ERROR",
+				Message: "unable to encode response",
+			},
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	_, _ = w.Write(append(body, '\n'))
 }

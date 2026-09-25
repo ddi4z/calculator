@@ -124,3 +124,14 @@ Run these workstreams:
 Afterward, create an integration worktree, combine all changes, resolve only integration issues, and run the complete backend and frontend validation suite.
 
 Do not change spec.md or add features outside its scope. Report worktrees, changed files, commands, and validation results [image](files/3.png)
+
+### Prompt 3.1
+The frontend is failing with: "Failed to execute 'json' on 'Response': Unexpected end of JSON input".
+Please check:
+- Whether the backend endpoint returns a valid JSON body for all cases.
+- If error responses are missing or truncated, ensure they follow the contract (structured error object).
+- Confirm that the frontend fetch call uses `response.json()` only when the response has a body.
+Suggest fixes in both backend and frontend to guarantee predictable JSON responses [image](files/3.1.png)
+
+### Prompt 3.2
+The frontend shows: POST http://127.0.0.1:5173/api/calculate 404 (Not Found)
