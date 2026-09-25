@@ -43,7 +43,7 @@ Although the specification mentions that parameter b is not required for unary o
 The response payload currently includes the operation field along with the result. This is redundant, since the client already knows which operation was requested ![Prompt 2.5 screenshot](files/2.5..png)
 
 ### Prompt 2.6
-In the Backend validation section, the specification mentions "an operand count that does not match the selected operation" This phrasing can be ambiguous, since a binary operation should explicitly require both operands a and b, while a unary operation should only require a. To avoid confusion and improve maintainability, the expression should be redefined more precisely. Alternatively, consider using an array of parameters ![Prompt 2.6 screenshot](files/2.6.png)
+The response payload currently includes the operation field along with the result. This is redundant, since the client already knows which operation was requested
 
 ### Prompt 2.7
 In the Backend validation section, the specification mentions "an operand count that does not match the selected operation" This phrasing can be ambiguous, since a binary operation should explicitly require both operands a and b, while a unary operation should only require a. To avoid confusion and improve maintainability, the expression should be redefined more precisely. Alternatively, consider using an array of parameters ![Prompt 2.7 screenshot](files/2.7.png)
