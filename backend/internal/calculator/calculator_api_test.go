@@ -152,6 +152,64 @@ func TestHTTPHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestHTTPRejectsUnsupportedMethodsAndRoutes(t *testing.T) {
+	h := NewHandler()
+
+	cases := []struct {
+		name       string
+		method     string
+		target     string
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "calculate get",
+			method:     http.MethodGet,
+			target:     "/api/calculate",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantCode:   codeInvalidMethod,
+		},
+		{
+			name:       "health post",
+			method:     http.MethodPost,
+			target:     "/api/health",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantCode:   codeInvalidMethod,
+		},
+		{
+			name:       "unknown route",
+			method:     http.MethodGet,
+			target:     "/api/unknown",
+			wantStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.wantCode == "" && tc.target == "/api/unknown" {
+				req := httptest.NewRequest(tc.method, tc.target, nil)
+				rr := httptest.NewRecorder()
+				h.ServeHTTP(rr, req)
+				if rr.Code != tc.wantStatus {
+					t.Fatalf("status = %d, want %d; body=%s", rr.Code, tc.wantStatus, rr.Body.String())
+				}
+				return
+			}
+
+			status, rawBody, response, err := doJSONRequest(t, h, tc.method, tc.target, nil)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			if status != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", status, tc.wantStatus, rawBody)
+			}
+			if tc.wantCode != "" && (response.Error == nil || response.Error.Code != tc.wantCode) {
+				t.Fatalf("error = %#v, want code %q; body=%s", response.Error, tc.wantCode, rawBody)
+			}
+		})
+	}
+}
+
 func TestRequestLoggingMiddleware(t *testing.T) {
 	var logs bytes.Buffer
 	originalWriter := log.Writer()
@@ -245,34 +303,104 @@ func TestHTTPCalculate_SuccessAndValidationContract(t *testing.T) {
 func TestHTTPCalculate_InvalidJSONAndMissingFields(t *testing.T) {
 	h := NewHandler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/calculate", bytes.NewBufferString("{bad json"))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("invalid JSON status = %d, want %d", rr.Code, http.StatusBadRequest)
+	cases := []struct {
+		name     string
+		payload  string
+		wantCode string
+	}{
+		{name: "malformed object", payload: "{bad json", wantCode: codeInvalidJSON},
+		{name: "multiple JSON values", payload: `{"operation":"add","operands":[1,2]} true`, wantCode: codeInvalidJSON},
+		{name: "non-object array", payload: `[{"operation":"add","operands":[1,2]}]`, wantCode: codeInvalidType},
+		{name: "scalar body", payload: `42`, wantCode: codeInvalidType},
 	}
 
-	var payload apiEnvelope
-	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("invalid JSON response not parseable: %v", err)
-	}
-	if payload.Error == nil || !strings.Contains(strings.ToUpper(payload.Error.Code), "INVALID_JSON") {
-		t.Fatalf("invalid JSON response = %#v, want INVALID_JSON error", payload)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/calculate", bytes.NewBufferString(tc.payload))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+
+			h.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+			}
+
+			var payload apiEnvelope
+			if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("response not parseable: %v", err)
+			}
+			if payload.Error == nil || payload.Error.Code != tc.wantCode {
+				t.Fatalf("error = %#v, want code %q", payload.Error, tc.wantCode)
+			}
+		})
 	}
 
-	body := map[string]any{"operation": "add", "operands": []any{12, nil}}
-	status, rawBody, resp, err := doJSONRequest(t, h, http.MethodPost, "/api/calculate", body)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	if status != http.StatusBadRequest {
-		t.Fatalf("null element status = %d, want %d; body=%s", status, http.StatusBadRequest, rawBody)
-	}
-	if resp.Error == nil || !strings.Contains(strings.ToUpper(resp.Error.Code), "INVALID_TYPE") {
-		t.Fatalf("null element error = %#v, want INVALID_TYPE; body=%s", resp.Error, rawBody)
+	t.Run("duplicate and unknown fields", func(t *testing.T) {
+		payload := `{"operation":"add","operation":"multiply","operands":[3,4],"unknown":true}`
+		status, rawBody, response, err := doRawJSONRequest(t, h, http.MethodPost, "/api/calculate", payload)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body=%s", status, http.StatusOK, rawBody)
+		}
+		if response.Result == nil || *response.Result != 12 {
+			t.Fatalf("result = %#v, want 12; body=%s", response.Result, rawBody)
+		}
+	})
+
+	t.Run("missing fields", func(t *testing.T) {
+		body := map[string]any{"operation": "add"}
+		status, rawBody, response, err := doJSONRequest(t, h, http.MethodPost, "/api/calculate", body)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		if status != http.StatusBadRequest || response.Error == nil || response.Error.Code != codeMissingField {
+			t.Fatalf("status=%d error=%#v, want 400/%s; body=%s", status, response.Error, codeMissingField, rawBody)
+		}
+	})
+
+	t.Run("null operands", func(t *testing.T) {
+		body := `{"operation":"add","operands":null}`
+		status, rawBody, response, err := doRawJSONRequest(t, h, http.MethodPost, "/api/calculate", body)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		if status != http.StatusBadRequest || response.Error == nil || response.Error.Code != codeInvalidType {
+			t.Fatalf("status=%d error=%#v, want 400/%s; body=%s", status, response.Error, codeInvalidType, rawBody)
+		}
+	})
+
+	t.Run("null operand element", func(t *testing.T) {
+		body := `{"operation":"add","operands":[12,null]}`
+		status, rawBody, response, err := doRawJSONRequest(t, h, http.MethodPost, "/api/calculate", body)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		if status != http.StatusBadRequest || response.Error == nil || response.Error.Code != codeInvalidType {
+			t.Fatalf("status=%d error=%#v, want 400/%s; body=%s", status, response.Error, codeInvalidType, rawBody)
+		}
+	})
+
+	for _, tc := range []struct {
+		name    string
+		payload string
+	}{
+		{name: "string operand", payload: `{"operation":"add","operands":[12,"3"]}`},
+		{name: "boolean operand", payload: `{"operation":"add","operands":[12,true]}`},
+		{name: "object operand", payload: `{"operation":"add","operands":[12,{}]}`},
+		{name: "non-finite operand", payload: `{"operation":"add","operands":[12,1e999]}`},
+	} {
+		t.Run("invalid "+tc.name, func(t *testing.T) {
+			status, rawBody, response, err := doRawJSONRequest(t, h, http.MethodPost, "/api/calculate", tc.payload)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			if status != http.StatusUnprocessableEntity || response.Error == nil || response.Error.Code != CodeInvalidNumber {
+				t.Fatalf("status=%d error=%#v, want 422/%s; body=%s", status, response.Error, CodeInvalidNumber, rawBody)
+			}
+		})
 	}
 }
 
@@ -287,6 +415,17 @@ func doJSONRequest(t *testing.T, h http.Handler, method, target string, payload 
 		}
 		body = bytes.NewReader(data)
 	}
+
+	return doRequest(t, h, method, target, body)
+}
+
+func doRawJSONRequest(t *testing.T, h http.Handler, method, target, payload string) (int, string, apiEnvelope, error) {
+	t.Helper()
+	return doRequest(t, h, method, target, bytes.NewBufferString(payload))
+}
+
+func doRequest(t *testing.T, h http.Handler, method, target string, body io.Reader) (int, string, apiEnvelope, error) {
+	t.Helper()
 
 	req := httptest.NewRequest(method, target, body)
 	req.Header.Set("Content-Type", "application/json")

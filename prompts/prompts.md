@@ -1,4 +1,4 @@
-# Prompts   
+﻿# Prompts   
 
 ## Prompt 1: Reformat Assignment
 read assignment.md and reformat it into a hierarchical Markdown document [image](files/1.png)
@@ -134,4 +134,46 @@ Please check:
 Suggest fixes in both backend and frontend to guarantee predictable JSON responses [image](files/3.1.png)
 
 ### Prompt 3.2
-The frontend shows: POST http://127.0.0.1:5173/api/calculate 404 (Not Found)
+The frontend shows: POST http://127.0.0.1:5173/api/calculate 404 (Not Found) [image](files/3.2.png)
+
+### Prompt 3.3
+The calculator currently displays very large exponentiation results (e.g., 2^1000) in raw scientific notation (1.0715086071862673e+301). 
+This output overflows the green result container and becomes unreadable. 
+
+Please check:
+- Format large numbers for readability (limit decimal places or use scientific notation with fixed precision).
+- Ensure the result container (green div) adapts to long outputs, either by wrapping text or resizing dynamically.
+- Confirm backend continues returning raw float64 values, while frontend handles presentation formatting [image](files/3.3.png)
+
+### Prompt 3.4
+Conceptually, divideOperation should be implemented using the existing binaryOperation abstraction, since it is a binary operator with arity = 2. 
+Similarly, sqrtOperation should be modeled using a reusable unaryOperation abstraction (arity = 1) instead of implementing the interface directly. [image](files/3.4.png)
+
+### Prompt 3.5
+Currently, multiple error messages are hardcoded across operations. Define constants for all error messages, similar to how error codes are already centralized [image](files/3.5.png)
+
+### Prompt 3.6
+Compare the current implementation against the requirements defined in spec.md. Provide clear, actionable corrections or refactor suggestions to bring calculator.go fully in line with spec.md [image](files/3.6.png)
+
+### Prompt 3.7
+Add lightweight structured request logging to the Go backend according to the current implementation [image](files/3.7.png)
+
+### Prompt 3.8
+/review [image](files/3.8.png)
+
+## Prompt 4
+Create the necessary Dockerfile to run the project in a reproducible environment. Update README.md with clear instructions covering exactly the following sections:  
+- Setup instructions
+- How to run the frontend and backend
+- Examples of API calls (if using REST)
+- Design decisions or assumptions [image](files/4.png)
+
+## Prompt 5
+include the test coverage [image](files/5.png)
+
+### Prompt 5.1
+Increase coverage for these: 
+- HTTP method and route rejection
+- malformed JSON and duplicate/unknown fields
+- missing,  null , and invalid operand values [image](files/5.1.png)
+
