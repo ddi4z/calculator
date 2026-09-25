@@ -5,12 +5,37 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
+	"time"
 )
 
-const invalidOperationMessage = "Operation must be one of: add, subtract, multiply, divide, power, sqrt, percent"
+const (
+	codeInvalidJSON   = "INVALID_JSON"
+	codeMissingField  = "MISSING_FIELD"
+	codeInvalidType   = "INVALID_TYPE"
+	codeInvalidMethod = "INVALID_METHOD"
+	codeInternalError = "INTERNAL_ERROR"
+
+	messageInvalidJSON       = "request body must be valid JSON"
+	messageRequestObject     = "request body must be a JSON object"
+	messageMultipleJSON      = "request body must contain one JSON value"
+	messageOperationType     = "operation must be a string"
+	messageOperationRequired = "operation is required"
+	messageOperandsRequired  = "operands is required"
+	messageOperandsType      = "operands must be an array"
+	messageTooManyOperands   = "too many operands"
+	messageMissingOperand    = "a required operand is missing"
+	messageOperandType       = "operand must be a number"
+	messageInvalidMethod     = "method not allowed"
+	messageResponseEncoding  = "unable to encode response"
+	messageInvalidJSONNumber = "not a JSON number"
+	messageNonFiniteNumber   = "not a finite number"
+)
+
+var errRequestBodyType = errors.New("request body must be a JSON object")
 
 type APIError struct {
 	Code    string `json:"code"`
@@ -33,6 +58,11 @@ type calculateRequest struct {
 }
 
 func (r *calculateRequest) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return errRequestBodyType
+	}
+
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
@@ -60,17 +90,47 @@ func NewHandler(calculators ...Calculator) http.Handler {
 	mux.HandleFunc("/api/health", healthHandler)
 	mux.HandleFunc("/api/calculate", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "INVALID_METHOD", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, codeInvalidMethod, messageInvalidMethod)
 			return
 		}
 		handleCalculate(w, r, calculator)
 	})
-	return mux
+	return requestLoggingMiddleware(mux)
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *loggingResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *loggingResponseWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func requestLoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		recorder := &loggingResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		log.Printf("request method=%s path=%s status=%d duration=%s", r.Method, r.URL.Path, status, time.Since(start))
+	})
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "INVALID_METHOD", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, codeInvalidMethod, messageInvalidMethod)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -80,67 +140,74 @@ func handleCalculate(w http.ResponseWriter, r *http.Request, calculator Calculat
 	var request calculateRequest
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_JSON", "request body must be valid JSON")
+		code := codeInvalidJSON
+		message := messageInvalidJSON
+		if errors.Is(err, errRequestBodyType) {
+			code = codeInvalidType
+			message = messageRequestObject
+		}
+		writeError(w, http.StatusBadRequest, code, message)
 		return
 	}
 	var extra json.RawMessage
 	if err := decoder.Decode(&extra); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "INVALID_JSON", "request body must contain one JSON value")
+		writeError(w, http.StatusBadRequest, codeInvalidJSON, messageMultipleJSON)
 		return
 	}
 
 	if !request.operation.present || request.operation.null {
 		if request.operation.null {
-			writeError(w, http.StatusBadRequest, "INVALID_TYPE", "operation must be a string")
+			writeError(w, http.StatusBadRequest, codeInvalidType, messageOperationType)
 		} else {
-			writeError(w, http.StatusBadRequest, "MISSING_FIELD", "operation is required")
+			writeError(w, http.StatusBadRequest, codeMissingField, messageOperationRequired)
 		}
 		return
 	}
 	var operation string
 	if err := json.Unmarshal(request.operation.raw, &operation); err != nil || operation == "" {
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "INVALID_TYPE", "operation must be a string")
+			writeError(w, http.StatusBadRequest, codeInvalidType, messageOperationType)
 		} else {
-			writeError(w, http.StatusBadRequest, "INVALID_OPERATION", invalidOperationMessage)
+			writeError(w, http.StatusBadRequest, CodeInvalidOperation, MessageInvalidOperation)
 		}
 		return
 	}
-	if !supportedOperation(operation) {
-		writeError(w, http.StatusBadRequest, "INVALID_OPERATION", invalidOperationMessage)
+	operationDefinition, ok := operationRegistry()[operation]
+	if !ok {
+		writeError(w, http.StatusBadRequest, CodeInvalidOperation, MessageInvalidOperation)
 		return
 	}
 	if !request.operands.present {
-		writeError(w, http.StatusBadRequest, "MISSING_FIELD", "operands is required")
+		writeError(w, http.StatusBadRequest, codeMissingField, messageOperandsRequired)
 		return
 	}
 	if request.operands.null {
-		writeError(w, http.StatusBadRequest, "INVALID_TYPE", "operands must be an array")
+		writeError(w, http.StatusBadRequest, codeInvalidType, messageOperandsType)
 		return
 	}
 	var rawOperands []json.RawMessage
 	if err := json.Unmarshal(request.operands.raw, &rawOperands); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_TYPE", "operands must be an array")
+		writeError(w, http.StatusBadRequest, codeInvalidType, messageOperandsType)
 		return
 	}
-	arity := operationArity(operation)
+	arity := operationDefinition.Arity()
 	if len(rawOperands) > arity {
-		writeError(w, http.StatusBadRequest, "INVALID_ARITY", "too many operands")
+		writeError(w, http.StatusBadRequest, CodeInvalidArity, messageTooManyOperands)
 		return
 	}
 	if len(rawOperands) < arity {
-		writeError(w, http.StatusBadRequest, "MISSING_FIELD", "a required operand is missing")
+		writeError(w, http.StatusBadRequest, codeMissingField, messageMissingOperand)
 		return
 	}
 	operands := make([]float64, arity)
 	for i, raw := range rawOperands {
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			writeError(w, http.StatusBadRequest, "INVALID_TYPE", "operand must be a number")
+			writeError(w, http.StatusBadRequest, codeInvalidType, messageOperandType)
 			return
 		}
 		value, err := parseFiniteNumber(raw)
 		if err != nil {
-			writeError(w, http.StatusUnprocessableEntity, "INVALID_NUMBER", "operand must be a finite number")
+			writeError(w, http.StatusUnprocessableEntity, CodeInvalidNumber, messageNonFiniteNumber)
 			return
 		}
 		operands[i] = value
@@ -153,13 +220,13 @@ func handleCalculate(w http.ResponseWriter, r *http.Request, calculator Calculat
 		}
 		message := err.Error()
 		if ErrorCode(err) == CodeInvalidOperation {
-			message = invalidOperationMessage
+			message = MessageInvalidOperation
 		}
 		writeError(w, status, ErrorCode(err), message)
 		return
 	}
 	if math.IsNaN(result) || math.IsInf(result, 0) {
-		writeError(w, http.StatusUnprocessableEntity, CodeNonFiniteResult, "calculation produced a non-finite result")
+		writeError(w, http.StatusUnprocessableEntity, CodeNonFiniteResult, MessageNonFiniteResult)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]float64{"result": result})
@@ -168,25 +235,13 @@ func handleCalculate(w http.ResponseWriter, r *http.Request, calculator Calculat
 func parseFiniteNumber(raw json.RawMessage) (float64, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || (trimmed[0] != '-' && (trimmed[0] < '0' || trimmed[0] > '9')) {
-		return 0, errors.New("not a JSON number")
+		return 0, errors.New(messageInvalidJSONNumber)
 	}
 	value, err := strconv.ParseFloat(string(trimmed), 64)
 	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
-		return 0, errors.New("not a finite number")
+		return 0, errors.New(messageNonFiniteNumber)
 	}
 	return value, nil
-}
-
-func supportedOperation(name string) bool {
-	return name == "add" || name == "subtract" || name == "multiply" || name == "divide" ||
-		name == "power" || name == "sqrt" || name == "percent"
-}
-
-func operationArity(name string) int {
-	if operation, ok := operationRegistry()[name]; ok {
-		return operation.Arity()
-	}
-	return 0
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
@@ -199,8 +254,8 @@ func writeJSON(w http.ResponseWriter, status int, value interface{}) {
 		status = http.StatusInternalServerError
 		body, _ = json.Marshal(errorResponse{
 			Error: APIError{
-				Code:    "INTERNAL_ERROR",
-				Message: "unable to encode response",
+				Code:    codeInternalError,
+				Message: messageResponseEncoding,
 			},
 		})
 	}

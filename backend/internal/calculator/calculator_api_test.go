@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -90,13 +91,14 @@ func TestCalculator_ValidationErrors(t *testing.T) {
 		name      string
 		operation string
 		operands  []float64
+		wantCode  string
 	}{
-		{name: "invalid operation", operation: "mod", operands: []float64{10, 2}},
-		{name: "division by zero", operation: "divide", operands: []float64{10, 0}},
-		{name: "negative sqrt", operation: "sqrt", operands: []float64{-1}},
-		{name: "non finite result", operation: "power", operands: []float64{0, -1}},
-		{name: "invalid arity unary", operation: "sqrt", operands: []float64{9, 1}},
-		{name: "invalid arity binary", operation: "add", operands: []float64{1}},
+		{name: "invalid operation", operation: "mod", operands: []float64{10, 2}, wantCode: CodeInvalidOperation},
+		{name: "division by zero", operation: "divide", operands: []float64{10, 0}, wantCode: CodeDivisionByZero},
+		{name: "negative sqrt", operation: "sqrt", operands: []float64{-1}, wantCode: CodeNegativeInput},
+		{name: "non finite result", operation: "power", operands: []float64{0, -1}, wantCode: CodeNonFiniteResult},
+		{name: "invalid arity unary", operation: "sqrt", operands: []float64{9, 1}, wantCode: CodeInvalidArity},
+		{name: "invalid arity binary", operation: "add", operands: []float64{1}, wantCode: CodeInvalidArity},
 	}
 
 	for _, tc := range cases {
@@ -104,6 +106,9 @@ func TestCalculator_ValidationErrors(t *testing.T) {
 			_, err := calc.Calculate(tc.operation, tc.operands)
 			if err == nil {
 				t.Fatalf("Calculate(%q, %v) expected error but got nil", tc.operation, tc.operands)
+			}
+			if code := ErrorCode(err); code != tc.wantCode {
+				t.Fatalf("Calculate(%q, %v) error code = %q, want %q", tc.operation, tc.operands, code, tc.wantCode)
 			}
 		})
 	}
@@ -120,6 +125,10 @@ func TestCalculator_RejectsMissingOrNullOperands(t *testing.T) {
 	}
 	if _, err := calc.Calculate("sqrt", []float64{}); err == nil {
 		t.Fatal("Calculate(sqrt, empty operands) should reject missing operand")
+	}
+
+	if _, err := calc.Calculate("add", []float64{math.NaN(), 1}); ErrorCode(err) != CodeInvalidNumber {
+		t.Fatalf("Calculate(add, non-finite operand) error code = %q, want %q", ErrorCode(err), CodeInvalidNumber)
 	}
 }
 
@@ -140,6 +149,36 @@ func TestHTTPHealthEndpoint(t *testing.T) {
 	}
 	if response["status"] != "ok" {
 		t.Fatalf("GET /api/health = %#v, want status=ok", response)
+	}
+}
+
+func TestRequestLoggingMiddleware(t *testing.T) {
+	var logs bytes.Buffer
+	originalWriter := log.Writer()
+	originalFlags := log.Flags()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(originalWriter)
+		log.SetFlags(originalFlags)
+	})
+
+	handler := NewHandler()
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET /api/health status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if !strings.Contains(logs.String(), "request method=GET path=/api/health status=200") {
+		t.Fatalf("log = %q, want method, path, and status", logs.String())
+	}
+	if !strings.Contains(logs.String(), "duration=") {
+		t.Fatalf("log = %q, want duration", logs.String())
+	}
+	if strings.Contains(logs.String(), "operands") {
+		t.Fatalf("log = %q, must not include request operands", logs.String())
 	}
 }
 

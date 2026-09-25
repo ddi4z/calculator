@@ -44,6 +44,21 @@ describe('calculator', () => {
     expect(await screen.findByText('15')).toBeInTheDocument()
   })
 
+  it('formats very large results with readable scientific notation', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ result: 1.0715086071862673e301 }), { status: 200 }),
+    )
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.type(screen.getByLabelText(/first number/i), '2')
+    await user.type(screen.getByLabelText(/second number/i), '1000')
+    await user.click(screen.getByRole('button', { name: /calculate/i }))
+
+    expect(await screen.findByText('1.071509e+301')).toBeInTheDocument()
+  })
+
   it('shows only one input and blocks invalid values', async () => {
     const user = userEvent.setup()
     render(<App />)

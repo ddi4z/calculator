@@ -39,6 +39,11 @@ const binaryOperations = new Set<Operation>([
 ])
 
 function formatResult(result: number) {
+  const absoluteResult = Math.abs(result)
+  if (absoluteResult >= 1e12 || (absoluteResult > 0 && absoluteResult < 1e-6)) {
+    return result.toExponential(6)
+  }
+
   return Number.isInteger(result)
     ? result.toString()
     : result.toLocaleString('en-US', { maximumFractionDigits: 10 })

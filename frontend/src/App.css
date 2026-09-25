@@ -121,11 +121,13 @@ button:disabled {
 
 .result-panel {
   display: grid;
+  min-width: 0;
   gap: 4px;
   padding: 18px 20px;
   border-radius: 14px;
   background: #eef8f4;
   color: #146c4a;
+  overflow-wrap: anywhere;
 }
 
 .feedback-label {
@@ -136,8 +138,11 @@ button:disabled {
 }
 
 .result-panel strong {
+  min-width: 0;
   font-size: clamp(1.75rem, 7vw, 2.5rem);
   line-height: 1.1;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .api-error {
