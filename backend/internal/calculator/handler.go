@@ -50,7 +50,12 @@ func valueFromFields(fields map[string]json.RawMessage, name string) presentValu
 	return presentValue{present: true, null: bytes.Equal(bytes.TrimSpace(raw), []byte("null")), raw: raw}
 }
 
-func NewHandler(calculator Calculator) http.Handler {
+func NewHandler(calculators ...Calculator) http.Handler {
+	var calculator Calculator = NewCalculator()
+	if len(calculators) > 0 && calculators[0] != nil {
+		calculator = calculators[0]
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler)
 	mux.HandleFunc("/api/calculate", func(w http.ResponseWriter, r *http.Request) {
